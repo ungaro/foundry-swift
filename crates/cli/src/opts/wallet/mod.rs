@@ -7,8 +7,8 @@ use ethers_core::types::{
     Signature,
 };
 use ethers_signers::{
-    coins_bip39::English, AwsSigner, AwsSignerError, HDPath as LedgerHDPath, Ledger, LedgerError,
-    LocalWallet, MnemonicBuilder, Signer, Trezor, TrezorError, TrezorHDPath, WalletError,
+    coins_bip39::English, AwsSigner, AwsSignerError,
+    LocalWallet, MnemonicBuilder, Signer,  WalletError,
 };
 use eyre::{bail, Result, WrapErr};
 use foundry_common::{fs, types::ToAlloy};
@@ -134,13 +134,6 @@ pub struct Wallet {
     )]
     pub keystore_password_file: Option<String>,
 
-    /// Use a Ledger hardware wallet.
-    #[clap(long, short, help_heading = "Wallet options - hardware wallet")]
-    pub ledger: bool,
-
-    /// Use a Trezor hardware wallet.
-    #[clap(long, short, help_heading = "Wallet options - hardware wallet")]
-    pub trezor: bool,
 
     /// Use AWS Key Management Service.
     #[clap(long, help_heading = "Wallet options - AWS KMS")]
@@ -220,33 +213,7 @@ impl Wallet {
     pub async fn signer(&self, chain_id: u64) -> Result<WalletSigner> {
         trace!("start finding signer");
 
-        if self.ledger {
-            let derivation = match self.raw.hd_path.as_ref() {
-                Some(hd_path) => LedgerHDPath::Other(hd_path.clone()),
-                None => LedgerHDPath::LedgerLive(self.raw.mnemonic_index as usize),
-            };
-            let ledger = Ledger::new(derivation, chain_id).await.wrap_err_with(|| {
-                "\
-Could not connect to Ledger device.
-Make sure it's connected and unlocked, with no other desktop wallet apps open."
-            })?;
-
-            Ok(WalletSigner::Ledger(ledger))
-        } else if self.trezor {
-            let derivation = match self.raw.hd_path.as_ref() {
-                Some(hd_path) => TrezorHDPath::Other(hd_path.clone()),
-                None => TrezorHDPath::TrezorLive(self.raw.mnemonic_index as usize),
-            };
-
-            // cached to ~/.ethers-rs/trezor/cache/trezor.session
-            let trezor = Trezor::new(derivation, chain_id, None).await.wrap_err_with(|| {
-                "\
-Could not connect to Trezor device.
-Make sure it's connected and unlocked, with no other conflicting desktop wallet apps open."
-            })?;
-
-            Ok(WalletSigner::Trezor(trezor))
-        } else if self.aws {
+      if self.aws {
             let client =
                 AwsClient::new_with(AwsChainProvider::default(), AwsHttpClient::new().unwrap());
 
@@ -422,18 +389,12 @@ pub enum WalletSignerError {
     #[error(transparent)]
     Local(#[from] WalletError),
     #[error(transparent)]
-    Ledger(#[from] LedgerError),
-    #[error(transparent)]
-    Trezor(#[from] TrezorError),
-    #[error(transparent)]
     Aws(#[from] AwsSignerError),
 }
 
 #[derive(Debug)]
 pub enum WalletSigner {
     Local(LocalWallet),
-    Ledger(Ledger),
-    Trezor(Trezor),
     Aws(AwsSigner),
 }
 
@@ -443,17 +404,7 @@ impl From<LocalWallet> for WalletSigner {
     }
 }
 
-impl From<Ledger> for WalletSigner {
-    fn from(hw: Ledger) -> Self {
-        Self::Ledger(hw)
-    }
-}
 
-impl From<Trezor> for WalletSigner {
-    fn from(hw: Trezor) -> Self {
-        Self::Trezor(hw)
-    }
-}
 
 impl From<AwsSigner> for WalletSigner {
     fn from(wallet: AwsSigner) -> Self {
@@ -465,8 +416,6 @@ macro_rules! delegate {
     ($s:ident, $inner:ident => $e:expr) => {
         match $s {
             Self::Local($inner) => $e,
-            Self::Ledger($inner) => $e,
-            Self::Trezor($inner) => $e,
             Self::Aws($inner) => $e,
         }
     };
@@ -505,8 +454,6 @@ impl Signer for WalletSigner {
     fn with_chain_id<T: Into<u64>>(self, chain_id: T) -> Self {
         match self {
             Self::Local(inner) => Self::Local(inner.with_chain_id(chain_id)),
-            Self::Ledger(inner) => Self::Ledger(inner.with_chain_id(chain_id)),
-            Self::Trezor(inner) => Self::Trezor(inner.with_chain_id(chain_id)),
             Self::Aws(inner) => Self::Aws(inner.with_chain_id(chain_id)),
         }
     }
@@ -589,8 +536,7 @@ mod tests {
             keystore_account_name: None,
             keystore_password: None,
             keystore_password_file: None,
-            ledger: false,
-            trezor: false,
+
             aws: false,
         };
         match wallet.private_key() {

@@ -10,10 +10,8 @@ license.workspace = true
 homepage.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "anvil"
-path = "src/anvil.rs"
-required-features = ["cli"]
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
 vergen = { version = "8", default-features = false, features = ["build", "git", "git2"] }

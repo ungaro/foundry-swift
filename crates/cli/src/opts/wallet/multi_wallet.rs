@@ -3,7 +3,7 @@ use alloy_primitives::Address;
 use clap::Parser;
 use ethers_providers::Middleware;
 use ethers_signers::{
-    AwsSigner, HDPath as LedgerHDPath, Ledger, LocalWallet, Signer, Trezor, TrezorHDPath,
+    AwsSigner, LocalWallet, Signer, 
 };
 use eyre::{Context, ContextCompat, Result};
 use foundry_common::{types::ToAlloy, RetryProvider};
@@ -190,13 +190,8 @@ pub struct MultiWallet {
     )]
     pub keystore_password_files: Option<Vec<String>>,
 
-    /// Use a Ledger hardware wallet.
-    #[clap(long, short, help_heading = "Wallet options - hardware wallet")]
-    pub ledger: bool,
 
-    /// Use a Trezor hardware wallet.
-    #[clap(long, short, help_heading = "Wallet options - hardware wallet")]
-    pub trezor: bool,
+
 
     /// Use AWS Key Management Service.
     #[clap(long, help_heading = "Wallet options - remote")]
@@ -227,8 +222,7 @@ impl MultiWallet {
         get_wallets!(
             wallets,
             [
-                self.trezors(chain).await?,
-                self.ledgers(chain).await?,
+ 
                 self.private_keys()?,
                 self.interactives()?,
                 self.mnemonics()?,
@@ -363,30 +357,7 @@ impl MultiWallet {
         Ok(None)
     }
 
-    pub async fn ledgers(&self, chain_id: u64) -> Result<Option<Vec<Ledger>>> {
-        if self.ledger {
-            let mut args = self.clone();
 
-            if let Some(paths) = &args.hd_paths {
-                if paths.len() > 1 {
-                    eyre::bail!("Ledger only supports one signer.");
-                }
-                args.mnemonic_indexes = None;
-            }
-
-            create_hw_wallets!(args, chain_id, get_from_ledger, wallets);
-            return Ok(Some(wallets))
-        }
-        Ok(None)
-    }
-
-    pub async fn trezors(&self, chain_id: u64) -> Result<Option<Vec<Trezor>>> {
-        if self.trezor {
-            create_hw_wallets!(self, chain_id, get_from_trezor, wallets);
-            return Ok(Some(wallets))
-        }
-        Ok(None)
-    }
 
     pub async fn aws_signers(&self, chain_id: u64) -> Result<Option<Vec<AwsSigner>>> {
         if self.aws {
@@ -410,34 +381,9 @@ impl MultiWallet {
         Ok(None)
     }
 
-    async fn get_from_trezor(
-        &self,
-        chain_id: u64,
-        hd_path: Option<&str>,
-        mnemonic_index: Option<usize>,
-    ) -> Result<Option<Trezor>> {
-        let derivation = match &hd_path {
-            Some(hd_path) => TrezorHDPath::Other(hd_path.to_string()),
-            None => TrezorHDPath::TrezorLive(mnemonic_index.unwrap_or(0)),
-        };
 
-        Ok(Some(Trezor::new(derivation, chain_id, None).await?))
-    }
 
-    async fn get_from_ledger(
-        &self,
-        chain_id: u64,
-        hd_path: Option<&str>,
-        mnemonic_index: Option<usize>,
-    ) -> Result<Option<Ledger>> {
-        let derivation = match hd_path {
-            Some(hd_path) => LedgerHDPath::Other(hd_path.to_string()),
-            None => LedgerHDPath::LedgerLive(mnemonic_index.unwrap_or(0)),
-        };
 
-        trace!(?chain_id, "Creating new ledger signer");
-        Ok(Some(Ledger::new(derivation, chain_id).await.wrap_err("Ledger device not available.")?))
-    }
 }
 
 #[cfg(test)]
@@ -491,8 +437,6 @@ mod tests {
     #[test]
     fn should_not_require_the_mnemonics_flag_with_mnemonic_indexes() {
         let wallet_options = vec![
-            ("ledger", "--mnemonic-indexes", 1),
-            ("trezor", "--mnemonic-indexes", 2),
             ("aws", "--mnemonic-indexes", 10),
         ];
 
@@ -505,8 +449,6 @@ mod tests {
             ]);
 
             match test_case.0 {
-                "ledger" => assert!(args.ledger),
-                "trezor" => assert!(args.trezor),
                 "aws" => assert!(args.aws),
                 _ => panic!("Should have matched one of the previous wallet options"),
             }
